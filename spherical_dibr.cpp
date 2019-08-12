@@ -1,35 +1,15 @@
-#define _USE_MATH_DEFINES
-#include <cmath>
-#include <iostream>
-#include <omp.h>
+#include "spherical_dibr.hpp"
 
 #define RAD(x) M_PI*(x)/180.0
 #define DEGREE(x) 180.0*(x)/M_PI
 
-#include "opencv2/imgproc.hpp"
-#include "opencv2/imgcodecs.hpp"
-#include "opencv2/highgui.hpp"
 
 using namespace std;
 using namespace cv;
 
-void draw_progress(float progress)
-{
-    std::cout << "[";
-    int bar_width = 70;
-    int pos = bar_width * progress;
-    for (int i = 0; i < bar_width; ++i) {
-        if (i < pos) std::cout << "=";
-        else if (i == pos) std::cout << ">";
-        else std::cout << " ";
-    }
-    std::cout << "] " << int(progress * 100.0) << " %\r";
-    std::cout.flush();
-}
-
 // From OpenCV example utils.hpp code
 // Calculates rotation matrix given euler angles.
-Mat eular2rot(Vec3f theta)
+Mat spherical_dibr::eular2rot(Vec3f theta)
 {
     // Calculate rotation about x axis
     Mat R_x = (Mat_<double>(3,3) <<
@@ -58,12 +38,12 @@ Mat eular2rot(Vec3f theta)
     return R;
 }
 
-Vec3d pixel2rad(const Vec3d& in_vec, int width, int height)
+Vec3d spherical_dibr::pixel2rad(const Vec3d& in_vec, int width, int height)
 {
     return Vec3d(M_PI*in_vec[0]/height, 2*M_PI*in_vec[1]/width, in_vec[2]);
 }
 
-Vec3d rad2cart(const Vec3d& vec_rad)
+Vec3d spherical_dibr::rad2cart(const Vec3d& vec_rad)
 {
     Vec3d vec_cartesian;
     vec_cartesian[0] = vec_rad[2]*sin(vec_rad[0])*cos(vec_rad[1]);
@@ -72,7 +52,7 @@ Vec3d rad2cart(const Vec3d& vec_rad)
     return vec_cartesian;
 }
 
-Vec3d applyRT(const Vec3d& vec_cartesian, const Mat& rot_mat, const Vec3d t_vec)
+Vec3d spherical_dibr::applyRT(const Vec3d& vec_cartesian, const Mat& rot_mat, const Vec3d t_vec)
 {
     double* rot_mat_data = (double*)rot_mat.data;
     Vec3d vec_cartesian_tran;
@@ -88,7 +68,7 @@ Vec3d applyRT(const Vec3d& vec_cartesian, const Mat& rot_mat, const Vec3d t_vec)
     return vec_cartesian_rot;
 }
 
-Vec3d cart2rad(const Vec3d& vec_cartesian_rot)
+Vec3d spherical_dibr::cart2rad(const Vec3d& vec_cartesian_rot)
 {
     Vec3d vec_rot;
     vec_rot[2] = sqrt(vec_cartesian_rot[0]*vec_cartesian_rot[0] + vec_cartesian_rot[1]*vec_cartesian_rot[1] + vec_cartesian_rot[2]*vec_cartesian_rot[2]);
@@ -101,7 +81,7 @@ Vec3d cart2rad(const Vec3d& vec_cartesian_rot)
     return vec_rot;
 }
 
-Vec3d rad2pixel(const Vec3d& vec_rot, int width, int height)
+Vec3d spherical_dibr::rad2pixel(const Vec3d& vec_rot, int width, int height)
 {
     Vec3d vec_pixel;
     vec_pixel[0] = height*vec_rot[0]/M_PI;
@@ -111,7 +91,7 @@ Vec3d rad2pixel(const Vec3d& vec_rot, int width, int height)
 }
 
 // rotate pixel, in_vec as input(row, col)
-Vec3d rt_pixel(const Vec3d& in_vec, const Vec3d& t_vec, const Mat& rot_mat, int width, int height)
+Vec3d spherical_dibr::rt_pixel(const Vec3d& in_vec, const Vec3d& t_vec, const Mat& rot_mat, int width, int height)
 {
     Vec3d vec_rad = pixel2rad(in_vec, width, height);
     Vec3d vec_cartesian = rad2cart(vec_rad);
@@ -122,7 +102,7 @@ Vec3d rt_pixel(const Vec3d& in_vec, const Vec3d& t_vec, const Mat& rot_mat, int 
     return vec_pixel;
 }
 
-Mat map_distance(Mat& depth, double min_pixel, double max_pixel, double min_dist, double max_dist)
+Mat spherical_dibr::map_distance(Mat& depth, double min_pixel, double max_pixel, double min_dist, double max_dist)
 {
     Mat depth_double(depth.rows, depth.cols, CV_64FC1);
     unsigned short* depth_data = (unsigned short*)depth.data;
@@ -140,7 +120,162 @@ Mat map_distance(Mat& depth, double min_pixel, double max_pixel, double min_dist
     return depth_double;
 }
 
-int main(int argc, char** argv)
+Mat spherical_dibr::median_depth(Mat& depth_double, int size)
+{
+    Mat depth_float, depth_double_median, depth_float_median;
+    depth_double.convertTo(depth_float, CV_32FC1);
+    medianBlur(depth_float, depth_float_median, size);
+    depth_float_median.convertTo(depth_double_median, CV_64FC1);
+    return depth_double_median;
+}
+
+Mat spherical_dibr::closing_depth(Mat& depth_double, int size)
+{
+    Mat depth_float, depth_double_median, depth_float_median;
+    depth_double.convertTo(depth_float, CV_32FC1);
+    Mat element(size, size, CV_32FC1, Scalar(1.0));
+    morphologyEx(depth_float, depth_float_median, CV_MOP_CLOSE, element);
+    depth_float_median.convertTo(depth_double_median, CV_64FC1);
+    return depth_double_median;
+}
+
+void spherical_dibr::image_depth_forward_mapping(Mat& im, Mat& depth_double, Mat& rot_mat, Vec3d t_vec, Mat& im_out, Mat& depth_out_double)
+{
+    int im_width = im.cols;
+    int im_height = im.rows;
+
+    im_out.create(im.rows, im.cols, im.type());
+    depth_out_double.create(depth_double.rows, depth_double.cols, depth_double.type());
+
+    Vec3w* im_data = (Vec3w*)im.data;
+    Vec3w* im_out_data = (Vec3w*)im_out.data;
+    double* depth_data = (double*)depth_double.data;
+    double* depth_out_double_data = (double*)depth_out_double.data;
+    
+    #pragma omp parallel for
+    for(int i = 0; i < im_height; i++)
+    {
+        for(int j = 0; j < im_width; j++)
+        {
+            // forward warping
+            Vec3d vec_pixel = rt_pixel(Vec3d(i, j, depth_data[i*im.cols + j])
+                                       , t_vec
+                                       , rot_mat
+                                       , im_width, im_height);
+            int dist_i = vec_pixel[0];
+            int dist_j = vec_pixel[1];
+            double dist_depth = vec_pixel[2];
+            if((dist_i >= 0) && (dist_j >= 0) && (dist_i < im_height) && (dist_j < im_width))
+            {
+                im_out_data[dist_i*im.cols + dist_j] = im_data[i*im.cols + j];
+                depth_out_double_data[dist_i*im.cols + dist_j] = dist_depth;
+            }
+        }
+    }
+}
+
+void spherical_dibr::image_depth_inverse_mapping(Mat& im, Mat& depth_out_double, Mat& rot_mat_inv, Vec3d t_vec_inv, Mat& im_out)
+{
+    int im_width = im.cols;
+    int im_height = im.rows;
+
+    im_out.create(im.rows, im.cols, im.type());
+
+    Vec3w* im_data = (Vec3w*)im.data;
+    Vec3w* im_out_data = (Vec3w*)im_out.data;
+    double* depth_out_double_data = (double*)depth_out_double.data;
+    
+    #pragma omp parallel for
+    for(int i = 0; i < im_height; i++)
+    {
+        for(int j = 0; j < im_width; j++)
+        {
+            // inverse warping
+            Vec3d vec_pixel = rt_pixel(Vec3d(i, j, depth_out_double_data[i*im.cols + j])
+                                       , t_vec_inv
+                                       , rot_mat_inv
+                                       , im_width, im_height);
+            int origin_i = vec_pixel[0];
+            int origin_j = vec_pixel[1];
+            double dist_depth = vec_pixel[2];
+            if((origin_i >= 0) && (origin_j >= 0) && (origin_i < im_height) && (origin_j < im_width))
+            {
+                im_out_data[i*im.cols + j] = im_data[origin_i*im.cols + origin_j];
+            }
+        }
+    }
+}
+
+Mat spherical_dibr::show_double_depth(Mat& depth_double)
+{
+    double min_pixel = 0, max_pixel = 65535;
+    double min_dist, max_dist;
+    minMaxLoc(depth_double, &min_dist, &max_dist);
+
+    int im_height = depth_double.rows;
+    int im_width = depth_double.cols;
+    double* depth_double_data = (double*)depth_double.data;
+    Mat depth(im_height, im_width, CV_16UC1);
+    unsigned short* depth_data = (unsigned short*)depth.data;
+
+    #pragma omp parallel for
+    for(int i = 0; i < im_height; i++)
+    {
+        for(int j = 0; j < im_width; j++)
+        {
+            depth_data[i*im_width + j] = (depth_double_data[i*im_width + j] - min_dist)*(max_pixel - min_pixel)/(max_dist - min_dist) + min_pixel;
+        }
+    }
+
+    return depth;
+}
+
+Mat spherical_dibr::show_float_depth(Mat& depth_double)
+{
+    double min_pixel = 0, max_pixel = 65535;
+    double min_dist, max_dist;
+    minMaxLoc(depth_double, &min_dist, &max_dist);
+
+    int im_height = depth_double.rows;
+    int im_width = depth_double.cols;
+    float* depth_double_data = (float*)depth_double.data;
+    Mat depth(im_height, im_width, CV_16UC1);
+    unsigned short* depth_data = (unsigned short*)depth.data;
+
+    #pragma omp parallel for
+    for(int i = 0; i < im_height; i++)
+    {
+        for(int j = 0; j < im_width; j++)
+        {
+            depth_data[i*im_width + j] = (depth_double_data[i*im_width + j] - min_dist)*(max_pixel - min_pixel)/(max_dist - min_dist) + min_pixel;
+        }
+    }
+
+    return depth;
+}
+
+void spherical_dibr::save_log_image(string log_dir, Mat& im_out_forward, Mat& im_out_inverse_median, Mat& im_out_inverse_closing, Mat& depth_out_forward, Mat& depth_out_median, Mat& depth_out_closing)
+{
+    string im_out_forward_name = log_dir + "im_out_forward.png";
+    string im_out_inverse_median_name = log_dir + "im_out_inverse_median.png";
+    string im_out_inverse_closing_name = log_dir + "im_out_inverse_closing.png";
+    string depth_out_forward_name = log_dir + "depth_out_forward.png";
+    string depth_out_median_name = log_dir + "depth_out_median.png";
+    string depth_out_closing_name = log_dir + "depth_out_closing.png";
+
+    vector<int> param;
+    param.push_back(CV_IMWRITE_PNG_COMPRESSION);
+    param.push_back(0);
+
+    imwrite(im_out_forward_name, im_out_forward, param);
+    imwrite(im_out_inverse_median_name, im_out_inverse_median, param);
+    imwrite(im_out_inverse_closing_name, im_out_inverse_closing, param);
+    imwrite(depth_out_forward_name, depth_out_forward, param);
+    imwrite(depth_out_median_name, depth_out_median, param);
+    imwrite(depth_out_closing_name, depth_out_closing, param);
+}
+
+int spherical_dibr::test(int argc, char** argv)
 {
     if(argc != 9)
     {
@@ -157,93 +292,61 @@ int main(int argc, char** argv)
         return 0;
     }
 
-    double im_width = im.cols;
-    double im_height = im.rows;
-    double im_size = im_width*im_height;
-    Size im_shape(im_height, im_width);
+    // Position for virtual view point
+    Mat rot_mat = eular2rot(Vec3f(RAD(atof(argv[3])), RAD(atof(argv[4])), RAD(atof(argv[5]))));
+    Vec3d t_vec(atof(argv[6]), atof(argv[7]), atof(argv[8]));
 
+    // Depth image range
     double min_pixel = 0, max_pixel = 65535;
     double min_dist = 0, max_dist = 6;
     Mat depth_double = map_distance(depth, min_pixel, max_pixel, min_dist, max_dist);
 
+    double im_width = im.cols;
+    double im_height = im.rows;
     cout << "width : " << im_width << ", height : " << im_height << endl;
 
-    Mat2i im_pixel_rotate(im_height, im_width);
-    Mat im_out(im.rows, im.cols, im.type());
-    Mat depth_out_double(depth.rows, depth.cols, CV_64FC1);
-    Mat depth_out(depth.rows, depth.cols, depth.type());
+    // Do Depth Image Based Rendering
+    Mat im_out, im_out_inv_median, im_out_inv_closing;
+    Mat depth_out_double, depth_out_double_median, depth_out_double_closing;
+    spherical_dibr::render(im, depth_double
+            , rot_mat, t_vec
+            , im_out, im_out_inv_median, im_out_inv_closing
+            , depth_out_double, depth_out_double_median, depth_out_double_closing);
 
-    Vec3w* im_data = (Vec3w*)im.data;
-    Vec3w* im_out_data = (Vec3w*)im_out.data;
-    double* depth_data = (double*)depth_double.data;
-    double* depth_out_double_data = (double*)depth_out_double.data;
-    unsigned short* depth_out_data = (unsigned short*)depth_out.data;
-
-    Mat rot_mat = eular2rot(Vec3f(RAD(atof(argv[3])), RAD(atof(argv[4])), RAD(atof(argv[5]))));
-    Vec3d t_vec(atof(argv[6]), atof(argv[7]), atof(argv[8]));
-
-    #pragma omp parallel for
-    for(int i = 0; i < static_cast<int>(im_height); i++)
-    {
-        for(int j = 0; j < static_cast<int>(im_width); j++)
-        {
-            // inverse warping
-            Vec3d vec_pixel = rt_pixel(Vec3d(i, j, depth_data[i*im.cols + j])
-                                       , t_vec
-                                       , rot_mat
-                                       , im_width, im_height);
-            int dist_i = vec_pixel[0];
-            int dist_j = vec_pixel[1];
-            double dist_depth = vec_pixel[2];
-            if((dist_i >= 0) && (dist_j >= 0) && (dist_i < im_height) && (dist_j < im_width))
-            {
-                im_out_data[dist_i*im.cols + dist_j] = im_data[i*im.cols + j];
-                depth_out_double_data[dist_i*im.cols + dist_j] = (dist_depth - min_dist)/(max_dist - min_dist);
-                depth_out_double_data[dist_i*im.cols + dist_j] = depth_out_double_data[dist_i*im.cols + dist_j]*(max_pixel - min_pixel) + min_pixel;
-                depth_out_data[dist_i*im.cols + dist_j] = depth_out_double_data[dist_i*im.cols + dist_j];
-            }
-        }
-        if(omp_get_thread_num() == 0)
-            draw_progress((i*1.0f/(im_height/omp_get_num_threads())));
-    }
-
-    vector<int> param;
-    param.push_back(CV_IMWRITE_PNG_COMPRESSION);
-    param.push_back(0);
-
-    String savename = argv[1];
-    savename = "_" + savename;
-    savename = argv[8] + savename;
-    savename = "_" + savename;
-    savename = argv[7] + savename;
-    savename = "_" + savename;
-    savename = argv[6] + savename;
-    savename = "_" + savename;
-    savename = argv[5] + savename;
-    savename = "_" + savename;
-    savename = argv[4] + savename;
-    savename = "_" + savename;
-    savename = argv[3] + savename;
-    savename = "rt_" + savename;
-    cout << "Save to " << savename << endl;
-    imwrite(savename, im_out, param);
-
-    String depthname = argv[1];
-    depthname = "_" + depthname;
-    depthname = argv[8] + depthname;
-    depthname = "_" + depthname;
-    depthname = argv[7] + depthname;
-    depthname = "_" + depthname;
-    depthname = argv[6] + depthname;
-    depthname = "_" + depthname;
-    depthname = argv[5] + depthname;
-    depthname = "_" + depthname;
-    depthname = argv[4] + depthname;
-    depthname = "_" + depthname;
-    depthname = argv[3] + depthname;
-    depthname = "depth_" + depthname;
-    cout << "Save to " << depthname << endl;
-    imwrite(depthname, depth_out, param);
+    // Save log images
+    string log_dir = "log/";
+    save_log_image(log_dir, im_out, im_out_inv_median, im_out_inv_closing, depth_out_double, depth_out_double_median, depth_out_double_closing);
 
     return 0;
+}
+
+void spherical_dibr::render(cv::Mat& im, cv::Mat& depth_double
+            , cv::Mat& rot_mat, cv::Vec3d t_vec
+            , cv::Mat& im_out_forward, cv::Mat& im_out_inverse_median, cv::Mat& im_out_inverse_closing
+            , cv::Mat& depth_out_forward, cv::Mat& depth_out_median, cv::Mat& depth_out_closing)
+{
+    // Do forward mapping
+    Mat im_out;
+    Mat depth_out_double;
+    image_depth_forward_mapping(im, depth_double, rot_mat, t_vec, im_out, depth_out_double);
+
+    // Filtering depth with median/morphological closing
+    int element_size = 7;
+    Mat depth_out_double_median = median_depth(depth_out_double, element_size);
+    Mat depth_out_double_closing = closing_depth(depth_out_double, element_size);
+    
+    // Do inverse mapping
+    Mat rot_mat_inv = rot_mat.inv();
+    Vec3d t_vec_inv = -t_vec;
+    
+    Mat im_out_inv_median, im_out_inv_closing;
+    image_depth_inverse_mapping(im, depth_out_double_median, rot_mat_inv, t_vec_inv, im_out_inv_median);
+    image_depth_inverse_mapping(im, depth_out_double_closing, rot_mat_inv, t_vec_inv, im_out_inv_closing);
+
+    im_out_forward = im_out;
+    im_out_inverse_median = im_out_inv_median;
+    im_out_inverse_closing = im_out_inv_closing;
+    depth_out_forward = depth_out_double;
+    depth_out_median = depth_out_double_median;
+    depth_out_closing = depth_out_double_closing;
 }
