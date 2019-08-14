@@ -14,14 +14,19 @@ class spherical_dibr
 {
 public:
     cv::Mat map_distance(cv::Mat& depth, double min_pixel, double max_pixel, double min_dist, double max_dist);
+    cv::Mat eular2rot(cv::Vec3f theta);
     void render(cv::Mat& im, cv::Mat& depth_double
-            , cv::Mat& rot_mat, cv::Vec3d t_vec
-            , cv::Mat& im_out_forward, cv::Mat& im_out_inverse_median, cv::Mat& im_out_inverse_closing
-            , cv::Mat& depth_out_forward, cv::Mat& depth_out_median, cv::Mat& depth_out_closing);
+            , cv::Mat& rot_mat, cv::Vec3d t_vec);
+
+    cv::Mat im_out_forward;
+    cv::Mat im_out_inverse_median;
+    cv::Mat im_out_inverse_closing;
+    cv::Mat depth_out_forward;
+    cv::Mat depth_out_median;
+    cv::Mat depth_out_closing;
 
     int test(int argc, char** argv);
 private:
-    cv::Mat eular2rot(cv::Vec3f theta);
     cv::Vec3d pixel2rad(const cv::Vec3d& in_vec, int width, int height);
     cv::Vec3d rad2cart(const cv::Vec3d& vec_rad);
     cv::Vec3d applyRT(const cv::Vec3d& vec_cartesian, const cv::Mat& rot_mat, const cv::Vec3d t_vec);

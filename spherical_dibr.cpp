@@ -144,9 +144,13 @@ void spherical_dibr::image_depth_forward_mapping(Mat& im, Mat& depth_double, Mat
     int im_width = im.cols;
     int im_height = im.rows;
 
+	Mat srci(im_height, im_width, CV_32F);
+	Mat srcj(im_height, im_width, CV_32F);
+    float* srci_data = (float*)srci.data;
+    float* srcj_data = (float*)srcj.data;
+
     im_out.create(im.rows, im.cols, im.type());
     depth_out_double.create(depth_double.rows, depth_double.cols, depth_double.type());
-
     Vec3w* im_data = (Vec3w*)im.data;
     Vec3w* im_out_data = (Vec3w*)im_out.data;
     double* depth_data = (double*)depth_double.data;
@@ -164,20 +168,26 @@ void spherical_dibr::image_depth_forward_mapping(Mat& im, Mat& depth_double, Mat
                                        , im_width, im_height);
             int dist_i = vec_pixel[0];
             int dist_j = vec_pixel[1];
+
+            srci_data[dist_i*im.cols + dist_j] = i;
+            srcj_data[dist_i*im.cols + dist_j] = j;
             double dist_depth = vec_pixel[2];
             if((dist_i >= 0) && (dist_j >= 0) && (dist_i < im_height) && (dist_j < im_width))
-            {
-                im_out_data[dist_i*im.cols + dist_j] = im_data[i*im.cols + j];
                 depth_out_double_data[dist_i*im.cols + dist_j] = dist_depth;
-            }
         }
     }
+    remap(im, im_out, srcj, srci, cv::INTER_LINEAR);
 }
 
 void spherical_dibr::image_depth_inverse_mapping(Mat& im, Mat& depth_out_double, Mat& rot_mat_inv, Vec3d t_vec_inv, Mat& im_out)
 {
     int im_width = im.cols;
     int im_height = im.rows;
+	
+    Mat srci(im_height, im_width, CV_32F);
+	Mat srcj(im_height, im_width, CV_32F);
+    float* srci_data = (float*)srci.data;
+    float* srcj_data = (float*)srcj.data;
 
     im_out.create(im.rows, im.cols, im.type());
 
@@ -197,13 +207,12 @@ void spherical_dibr::image_depth_inverse_mapping(Mat& im, Mat& depth_out_double,
                                        , im_width, im_height);
             int origin_i = vec_pixel[0];
             int origin_j = vec_pixel[1];
+            srci_data[i*im.cols + j] = origin_i;
+            srcj_data[i*im.cols + j] = origin_j;
             double dist_depth = vec_pixel[2];
-            if((origin_i >= 0) && (origin_j >= 0) && (origin_i < im_height) && (origin_j < im_width))
-            {
-                im_out_data[i*im.cols + j] = im_data[origin_i*im.cols + origin_j];
-            }
         }
     }
+    remap(im, im_out, srcj, srci, cv::INTER_LINEAR);
 }
 
 Mat spherical_dibr::show_double_depth(Mat& depth_double)
@@ -275,6 +284,35 @@ void spherical_dibr::save_log_image(string log_dir, Mat& im_out_forward, Mat& im
     imwrite(depth_out_closing_name, depth_out_closing, param);
 }
 
+void spherical_dibr::render(cv::Mat& im, cv::Mat& depth_double
+            , cv::Mat& rot_mat, cv::Vec3d t_vec)
+{
+    // Do forward mapping
+    Mat im_out;
+    Mat depth_out_double;
+    image_depth_forward_mapping(im, depth_double, rot_mat, t_vec, im_out, depth_out_double);
+
+    // Filtering depth with median/morphological closing
+    int element_size = 7;
+    Mat depth_out_double_median = median_depth(depth_out_double, element_size);
+    Mat depth_out_double_closing = closing_depth(depth_out_double, element_size);
+    
+    // Do inverse mapping
+    Mat rot_mat_inv = rot_mat.inv();
+    Vec3d t_vec_inv = -t_vec;
+    
+    Mat im_out_inv_median, im_out_inv_closing;
+    image_depth_inverse_mapping(im, depth_out_double_median, rot_mat_inv, t_vec_inv, im_out_inv_median);
+    image_depth_inverse_mapping(im, depth_out_double_closing, rot_mat_inv, t_vec_inv, im_out_inv_closing);
+
+    im_out_forward = im_out;
+    im_out_inverse_median = im_out_inv_median;
+    im_out_inverse_closing = im_out_inv_closing;
+    depth_out_forward = depth_out_double;
+    depth_out_median = depth_out_double_median;
+    depth_out_closing = depth_out_double_closing;
+}
+
 int spherical_dibr::test(int argc, char** argv)
 {
     if(argc != 9)
@@ -306,47 +344,17 @@ int spherical_dibr::test(int argc, char** argv)
     cout << "width : " << im_width << ", height : " << im_height << endl;
 
     // Do Depth Image Based Rendering
-    Mat im_out, im_out_inv_median, im_out_inv_closing;
-    Mat depth_out_double, depth_out_double_median, depth_out_double_closing;
-    spherical_dibr::render(im, depth_double
-            , rot_mat, t_vec
-            , im_out, im_out_inv_median, im_out_inv_closing
-            , depth_out_double, depth_out_double_median, depth_out_double_closing);
+    render(im, depth_double
+            , rot_mat, t_vec);
 
     // Save log images
     string log_dir = "log/";
-    save_log_image(log_dir, im_out, im_out_inv_median, im_out_inv_closing, depth_out_double, depth_out_double_median, depth_out_double_closing);
+    save_log_image(log_dir, im_out_forward
+                          , im_out_inverse_median
+                          , im_out_inverse_closing
+                          , depth_out_forward
+                          , depth_out_median
+                          , depth_out_closing);
 
     return 0;
-}
-
-void spherical_dibr::render(cv::Mat& im, cv::Mat& depth_double
-            , cv::Mat& rot_mat, cv::Vec3d t_vec
-            , cv::Mat& im_out_forward, cv::Mat& im_out_inverse_median, cv::Mat& im_out_inverse_closing
-            , cv::Mat& depth_out_forward, cv::Mat& depth_out_median, cv::Mat& depth_out_closing)
-{
-    // Do forward mapping
-    Mat im_out;
-    Mat depth_out_double;
-    image_depth_forward_mapping(im, depth_double, rot_mat, t_vec, im_out, depth_out_double);
-
-    // Filtering depth with median/morphological closing
-    int element_size = 7;
-    Mat depth_out_double_median = median_depth(depth_out_double, element_size);
-    Mat depth_out_double_closing = closing_depth(depth_out_double, element_size);
-    
-    // Do inverse mapping
-    Mat rot_mat_inv = rot_mat.inv();
-    Vec3d t_vec_inv = -t_vec;
-    
-    Mat im_out_inv_median, im_out_inv_closing;
-    image_depth_inverse_mapping(im, depth_out_double_median, rot_mat_inv, t_vec_inv, im_out_inv_median);
-    image_depth_inverse_mapping(im, depth_out_double_closing, rot_mat_inv, t_vec_inv, im_out_inv_closing);
-
-    im_out_forward = im_out;
-    im_out_inverse_median = im_out_inv_median;
-    im_out_inverse_closing = im_out_inv_closing;
-    depth_out_forward = depth_out_double;
-    depth_out_median = depth_out_double_median;
-    depth_out_closing = depth_out_double_closing;
 }
