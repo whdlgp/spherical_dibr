@@ -7,35 +7,21 @@
 using namespace std;
 using namespace cv;
 
-// From OpenCV example utils.hpp code
-// Calculates rotation matrix given euler angles.
-Mat spherical_dibr::eular2rot(Vec3f theta)
+// Wrapper of rodrigues rotation vector <-> matrix conversion
+Mat spherical_dibr::eular2rot(Vec3d theta)
 {
-    // Calculate rotation about x axis
-    Mat R_x = (Mat_<double>(3,3) <<
-               1,       0,              0,
-               0,       cos(theta[0]),   -sin(theta[0]),
-               0,       sin(theta[0]),   cos(theta[0])
-               );
-     
-    // Calculate rotation about y axis
-    Mat R_y = (Mat_<double>(3,3) <<
-               cos(theta[1]),    0,      sin(theta[1]),
-               0,               1,      0,
-               -sin(theta[1]),   0,      cos(theta[1])
-               );
-     
-    // Calculate rotation about z axis
-    Mat R_z = (Mat_<double>(3,3) <<
-               cos(theta[2]),    -sin(theta[2]),      0,
-               sin(theta[2]),    cos(theta[2]),       0,
-               0,               0,                  1);
-     
-     
-    // Combined rotation matrix
-    Mat R = R_z * R_y * R_x;
-     
+    Mat R;
+    Rodrigues(theta, R);
     return R;
+}
+
+Vec3d spherical_dibr::rot2eular(Mat rot_mat)
+{
+    Mat vec_mat;
+    Rodrigues(rot_mat, vec_mat);
+    double* vec_mat_data = (double*)vec_mat.data;
+    Vec3d rot_vec_inv_rodrig(vec_mat_data[0], vec_mat_data[1], vec_mat_data[2]);
+    return rot_vec_inv_rodrig;
 }
 
 Vec3d spherical_dibr::pixel2rad(const Vec3d& in_vec, int width, int height)
@@ -118,6 +104,23 @@ Mat spherical_dibr::map_distance(Mat& depth, double min_pixel, double max_pixel,
     }
 
     return depth_double;
+}
+
+Mat spherical_dibr::remap_distance(Mat& depth, double min_dist, double max_dist, double min_pixel, double max_pixel)
+{
+    Mat depth_int16(depth.rows, depth.cols, CV_16UC1);
+    double* depth_data = (double*)depth.data;
+    unsigned short* depth_int16_data = (unsigned short*)depth_int16.data;
+    #pragma omp parallel for
+    for(int i = 0; i < depth.rows; i++)
+    {
+        for(int j = 0; j < depth.cols; j++)
+        {
+            depth_int16_data[i*depth.cols + j] = (depth_data[i*depth.cols + j] - min_dist)/(max_dist - min_dist)*(max_pixel - min_pixel) + min_pixel;
+        }
+    }
+
+    return depth_int16;
 }
 
 Mat spherical_dibr::median_depth(Mat& depth_double, int size)
@@ -298,7 +301,7 @@ void spherical_dibr::render(cv::Mat& im, cv::Mat& depth_double
     Mat depth_out_double_closing = closing_depth(depth_out_double, element_size);
     
     // Do inverse mapping
-    Mat rot_mat_inv = rot_mat.inv();
+    Mat rot_mat_inv = rot_mat.t();
     Vec3d t_vec_inv = -t_vec;
     
     Mat im_out_inv_median, im_out_inv_closing;

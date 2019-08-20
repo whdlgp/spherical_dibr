@@ -6,15 +6,15 @@
 #include <omp.h>
 #include <sstream>
 
-#include "opencv2/imgproc.hpp"
-#include "opencv2/imgcodecs.hpp"
-#include "opencv2/highgui.hpp"
+#include <opencv2/opencv.hpp>
 
 class spherical_dibr
 {
 public:
     cv::Mat map_distance(cv::Mat& depth, double min_pixel, double max_pixel, double min_dist, double max_dist);
-    cv::Mat eular2rot(cv::Vec3f theta);
+    cv::Mat remap_distance(cv::Mat& depth, double min_dist, double max_dist, double min_pixel, double max_pixel);
+    cv::Vec3d rot2eular(cv::Mat rot_mat);
+    cv::Mat eular2rot(cv::Vec3d theta);
     void render(cv::Mat& im, cv::Mat& depth_double
             , cv::Mat& rot_mat, cv::Vec3d t_vec);
 

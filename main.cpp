@@ -20,29 +20,6 @@ using namespace cv;
 #define RAD(x) M_PI*(x)/180.0
 #define DEGREE(x) 180.0*(x)/M_PI
 
-// from: https://www.learnopencv.com/rotation-matrix-to-euler-angles/
-Vec3f rot2euler(Mat &R)
-{
-    float sy = sqrt(R.at<double>(0,0) * R.at<double>(0,0) +  R.at<double>(1,0) * R.at<double>(1,0) );
-    bool singular = sy < 1e-6; // If
-    float x, y, z;
-
-    if (!singular)
-    {
-        x = atan2(R.at<double>(2,1) , R.at<double>(2,2));
-        y = atan2(-R.at<double>(2,0), sy);
-        z = atan2(R.at<double>(1,0), R.at<double>(0,0));
-    }
-    else
-    {
-        x = atan2(-R.at<double>(1,2), R.at<double>(1,1));
-        y = atan2(-R.at<double>(2,0), sy);
-        z = 0;
-    }
-
-    return Vec3f(x, y, z);
-}
-
 vector<string> string_parse(string str, string tok)
 {
     vector<string> token;
@@ -119,7 +96,7 @@ int main()
         im[i] = imread(cam_name[i], IMREAD_ANYCOLOR | IMREAD_ANYDEPTH);
         depth[i] = imread(depth_name[i], IMREAD_ANYDEPTH);
         rot_mat[i] = sp_dibr.eular2rot(Vec3f(RAD(cam_rot[i][0]), RAD(cam_rot[i][1]), RAD(cam_rot[i][2])));
-        rot_mat_inv[i] = rot_mat[i].inv();
+        rot_mat_inv[i] = rot_mat[i].t();
 
         double min_pixel = 0, max_pixel = 65535;
         double min_dist = depth_min, max_dist = depth_max;
@@ -131,15 +108,30 @@ int main()
     {
         spherical_dibr spd;
         cout << "image " << i << " now do rendering" << endl;
+
         Mat r = rot_mat_inv[i]*vt_rot_mat;
-        Vec3d r_vec = rot2euler(r);
+        Vec3d r_vec = sp_dibr.rot2eular(r);
         cout << DEGREE(r_vec[0]) << ',' << DEGREE(r_vec[1]) << ',' << DEGREE(r_vec[2]) << endl;
         Vec3d t = vt_tran-cam_tran[i];
         spd.render(im[i], depth_double[i], r, t);
-        string name = "test_result";
-        name = name + to_string(i);
-        name = name + ".png";
-        imwrite(name, spd.im_out_inverse_closing);
+
+        string image_name = "test_result";
+        image_name = image_name + to_string(i);
+        image_name = image_name + ".png";
+        imwrite(image_name, spd.im_out_inverse_closing);
+
+        double min_pixel = 0, max_pixel = 65535;
+        double min_dist = depth_min, max_dist = depth_max;
+
+        string depth_closing_name = "test_depth_closing";
+        depth_closing_name = depth_closing_name + to_string(i);
+        depth_closing_name = depth_closing_name + ".png";
+        imwrite(depth_closing_name, spd.remap_distance(spd.depth_out_closing, min_dist, max_dist, min_pixel, max_pixel));
+
+        string depth_median_name = "test_depth_median";
+        depth_median_name = depth_median_name + to_string(i);
+        depth_median_name = depth_median_name + ".png";
+        imwrite(depth_median_name, spd.remap_distance(spd.depth_out_median, min_dist, max_dist, min_pixel, max_pixel));
     }
 
     return 0;
