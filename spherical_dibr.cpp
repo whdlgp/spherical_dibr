@@ -1,4 +1,5 @@
 #include "spherical_dibr.hpp"
+#include "equi2cube.hpp"
 
 #define RAD(x) M_PI*(x)/180.0
 #define DEGREE(x) 180.0*(x)/M_PI
@@ -211,7 +212,12 @@ void spherical_dibr::image_depth_forward_mapping(Mat& im, Mat& depth_double, Mat
             srcj_data[dist_i*im.cols + dist_j] = j;
             double dist_depth = vec_pixel[2];
             if((dist_i >= 0) && (dist_j >= 0) && (dist_i < im_height) && (dist_j < im_width))
-                depth_out_double_data[dist_i*im.cols + dist_j] = dist_depth;
+            {
+                if(depth_out_double_data[dist_i*im.cols + dist_j] == 0)
+                    depth_out_double_data[dist_i*im.cols + dist_j] = dist_depth;
+                else if(depth_out_double_data[dist_i*im.cols + dist_j] > dist_depth)
+                    depth_out_double_data[dist_i*im.cols + dist_j] = dist_depth;
+            }
         }
     }
     remap(im, im_out, srcj, srci, cv::INTER_LINEAR);
@@ -330,11 +336,19 @@ void spherical_dibr::render(cv::Mat& im, cv::Mat& depth_double
     Mat depth_out_double;
     image_depth_forward_mapping(im, depth_double, rot_mat, t_vec, im_out, depth_out_double);
 
+    // Convert depth map to cube map
+    equi2cube eq;
+    eq.set_omp(omp_get_num_procs());
+    Mat depth_cube = eq.get_all(depth_out_double, 600);
+
     // Filtering depth with median/morphological closing
     int element_size = 7;
-    Mat depth_out_double_median = median_depth(depth_out_double, element_size);
-    Mat depth_out_double_closing = closing_depth(depth_out_double, element_size);
-    
+    Mat depth_cube_median = median_depth(depth_cube, element_size);
+    Mat depth_cube_closing = closing_depth(depth_cube, element_size);
+
+    Mat depth_out_double_median = eq.cube2equi(depth_cube_median, depth_double.cols, depth_double.rows);
+    Mat depth_out_double_closing = eq.cube2equi(depth_cube_closing, depth_double.cols, depth_double.rows);
+
     // Do inverse mapping
     Mat rot_mat_inv = rot_mat.t();
     Vec3d t_vec_inv = -t_vec;

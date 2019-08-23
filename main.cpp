@@ -110,8 +110,6 @@ int main()
         cout << "image " << i << " now do rendering" << endl;
 
         Mat r = rot_mat_inv[i]*vt_rot_mat;
-        Vec3d r_vec = sp_dibr.rot2eular(r);
-        cout << DEGREE(r_vec[0]) << ',' << DEGREE(r_vec[1]) << ',' << DEGREE(r_vec[2]) << endl;
         Vec3d t = vt_tran-cam_tran[i];
         spd.render(im[i], depth_double[i], r, t);
 
