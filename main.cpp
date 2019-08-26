@@ -56,7 +56,7 @@ int main()
     }
 
     int num_of_camera = reader.GetInteger("camera", "number", -1);
-    std::cout << "Config loaded from 'test.ini'\n"
+    std::cout << "Config loaded from 'camera_info.ini'\n"
               << "number of camera : " <<  reader.GetInteger("camera", "number", -1) << "\n"
               << "rotation vector\n" << reader.Get("camera", "rotation", "UNKNOWN") << "\n"
               << "translation vector\n" << reader.Get("camera", "translation", "UNKNOWN") << "\n"
@@ -109,6 +109,7 @@ int main()
         spherical_dibr spd;
         cout << "image " << i << " now do rendering" << endl;
 
+        // Calculate R|t to render virtual view point
         Mat r = vt_rot_mat*rot_mat_inv[i];
         Vec3d t_tmp = vt_tran-cam_tran[i];
         double* rot_mat_data = (double*)rot_mat[i].data;
@@ -116,25 +117,53 @@ int main()
         t[0] = rot_mat_data[0]*t_tmp[0] + rot_mat_data[1]*t_tmp[1] + rot_mat_data[2]*t_tmp[2];
         t[1] = rot_mat_data[3]*t_tmp[0] + rot_mat_data[4]*t_tmp[1] + rot_mat_data[5]*t_tmp[2];
         t[2] = rot_mat_data[6]*t_tmp[0] + rot_mat_data[7]*t_tmp[1] + rot_mat_data[8]*t_tmp[2];
-        spd.render(im[i], depth_double[i], r, t);
 
-        string image_name = "test_result";
-        image_name = image_name + to_string(i);
-        image_name = image_name + ".png";
-        imwrite(image_name, spd.im_out_inverse_closing);
+        // Render virtual view point
+        int map_opt = spd.INVERSE_ONLY;
+        int filt_opt = spd.FILTER_CLOSING;
+        spd.render(im[i], depth_double[i], r, t, map_opt, filt_opt);
 
-        double min_pixel = 0, max_pixel = 65535;
-        double min_dist = depth_min, max_dist = depth_max;
+        // save
 
-        string depth_closing_name = "test_depth_closing";
-        depth_closing_name = depth_closing_name + to_string(i);
-        depth_closing_name = depth_closing_name + ".png";
-        imwrite(depth_closing_name, spd.remap_distance(spd.depth_out_closing, min_dist, max_dist, min_pixel, max_pixel));
+        if(map_opt == spd.FORWARD_INVERSE)
+        {
+            string forward_image_name = "test_result";
+            forward_image_name = forward_image_name + to_string(i);
+            forward_image_name = forward_image_name + "_forward.png";
+            imwrite(forward_image_name, spd.im_out_forward);
 
-        string depth_median_name = "test_depth_median";
-        depth_median_name = depth_median_name + to_string(i);
-        depth_median_name = depth_median_name + ".png";
-        imwrite(depth_median_name, spd.remap_distance(spd.depth_out_median, min_dist, max_dist, min_pixel, max_pixel));
+            string image_name = "test_result";
+            image_name = image_name + to_string(i);
+            image_name = image_name + "_inverse.png";
+            imwrite(image_name, spd.im_out_inverse_closing);
+        }
+        
+        if(map_opt == spd.INVERSE_ONLY)
+        {
+            string image_name = "test_result";
+            image_name = image_name + to_string(i);
+            image_name = image_name + "_inverse.png";
+            imwrite(image_name, spd.im_out_inverse_closing);
+        }
+
+        if(filt_opt == spd.FILTER_MEDIAN)
+        {
+            double min_pixel = 0, max_pixel = 65535;
+            double min_dist = depth_min, max_dist = depth_max;
+            string depth_median_name = "test_depth_median";
+            depth_median_name = depth_median_name + to_string(i);
+            depth_median_name = depth_median_name + ".png";
+            imwrite(depth_median_name, spd.remap_distance(spd.depth_out_median, min_dist, max_dist, min_pixel, max_pixel));
+        }
+        if(filt_opt == spd.FILTER_CLOSING)
+        {
+            double min_pixel = 0, max_pixel = 65535;
+            double min_dist = depth_min, max_dist = depth_max;
+            string depth_closing_name = "test_depth_closing";
+            depth_closing_name = depth_closing_name + to_string(i);
+            depth_closing_name = depth_closing_name + ".png";
+            imwrite(depth_closing_name, spd.remap_distance(spd.depth_out_closing, min_dist, max_dist, min_pixel, max_pixel));
+        }
     }
 
     return 0;

@@ -157,7 +157,7 @@ Mat spherical_dibr::map_distance(Mat& depth, double min_pixel, double max_pixel,
     Mat depth_double(depth.rows, depth.cols, CV_64FC1);
     unsigned short* depth_data = (unsigned short*)depth.data;
     double* depth_double_data = (double*)depth_double.data;
-    #pragma omp parallel for
+    #pragma omp parallel for collapse(2)
     for(int i = 0; i < depth.rows; i++)
     {
         for(int j = 0; j < depth.cols; j++)
@@ -175,7 +175,7 @@ Mat spherical_dibr::remap_distance(Mat& depth, double min_dist, double max_dist,
     Mat depth_int16(depth.rows, depth.cols, CV_16UC1);
     double* depth_data = (double*)depth.data;
     unsigned short* depth_int16_data = (unsigned short*)depth_int16.data;
-    #pragma omp parallel for
+    #pragma omp parallel for collapse(2)
     for(int i = 0; i < depth.rows; i++)
     {
         for(int j = 0; j < depth.cols; j++)
@@ -206,7 +206,7 @@ Mat spherical_dibr::closing_depth(Mat& depth_double, int size)
     return depth_double_median;
 }
 
-void spherical_dibr::image_depth_forward_mapping(Mat& im, Mat& depth_double, Mat& rot_mat, Vec3d t_vec, Mat& im_out, Mat& depth_out_double)
+void spherical_dibr::image_depth_forward_mapping(Mat& im, Mat& depth_double, Mat& rot_mat, Vec3d t_vec, Mat& im_out, Mat& depth_out_double, int map_opt)
 {
     int im_width = im.cols;
     int im_height = im.rows;
@@ -223,32 +223,61 @@ void spherical_dibr::image_depth_forward_mapping(Mat& im, Mat& depth_double, Mat
     double* depth_data = (double*)depth_double.data;
     double* depth_out_double_data = (double*)depth_out_double.data;
     
-    #pragma omp parallel for
-    for(int i = 0; i < im_height; i++)
+    if(map_opt == FORWARD_INVERSE)
     {
-        for(int j = 0; j < im_width; j++)
+        #pragma omp parallel for collapse(2)
+        for(int i = 0; i < im_height; i++)
         {
-            // forward warping
-            Vec3d vec_pixel = tr_pixel(Vec3d(i, j, depth_data[i*im.cols + j])
-                                       , t_vec
-                                       , rot_mat
-                                       , im_width, im_height);
-            int dist_i = vec_pixel[0];
-            int dist_j = vec_pixel[1];
-
-            srci_data[dist_i*im.cols + dist_j] = i;
-            srcj_data[dist_i*im.cols + dist_j] = j;
-            double dist_depth = vec_pixel[2];
-            if((dist_i >= 0) && (dist_j >= 0) && (dist_i < im_height) && (dist_j < im_width))
+            for(int j = 0; j < im_width; j++)
             {
-                if(depth_out_double_data[dist_i*im.cols + dist_j] == 0)
-                    depth_out_double_data[dist_i*im.cols + dist_j] = dist_depth;
-                else if(depth_out_double_data[dist_i*im.cols + dist_j] > dist_depth)
-                    depth_out_double_data[dist_i*im.cols + dist_j] = dist_depth;
+                // forward warping
+                Vec3d vec_pixel = tr_pixel(Vec3d(i, j, depth_data[i*im.cols + j])
+                                        , t_vec
+                                        , rot_mat
+                                        , im_width, im_height);
+                int dist_i = vec_pixel[0];
+                int dist_j = vec_pixel[1];
+
+                srci_data[dist_i*im.cols + dist_j] = i;
+                srcj_data[dist_i*im.cols + dist_j] = j;
+                double dist_depth = vec_pixel[2];
+                if((dist_i >= 0) && (dist_j >= 0) && (dist_i < im_height) && (dist_j < im_width))
+                {
+                    if(depth_out_double_data[dist_i*im.cols + dist_j] == 0)
+                        depth_out_double_data[dist_i*im.cols + dist_j] = dist_depth;
+                    else if(depth_out_double_data[dist_i*im.cols + dist_j] > dist_depth)
+                        depth_out_double_data[dist_i*im.cols + dist_j] = dist_depth;
+                }
+            }
+        }
+        remap(im, im_out, srcj, srci, cv::INTER_LINEAR);
+    }
+    else if(map_opt == INVERSE_ONLY)
+    {
+        #pragma omp parallel for collapse(2)
+        for(int i = 0; i < im_height; i++)
+        {
+            for(int j = 0; j < im_width; j++)
+            {
+                // forward warping
+                Vec3d vec_pixel = tr_pixel(Vec3d(i, j, depth_data[i*im.cols + j])
+                                        , t_vec
+                                        , rot_mat
+                                        , im_width, im_height);
+                int dist_i = vec_pixel[0];
+                int dist_j = vec_pixel[1];
+
+                double dist_depth = vec_pixel[2];
+                if((dist_i >= 0) && (dist_j >= 0) && (dist_i < im_height) && (dist_j < im_width))
+                {
+                    if(depth_out_double_data[dist_i*im.cols + dist_j] == 0)
+                        depth_out_double_data[dist_i*im.cols + dist_j] = dist_depth;
+                    else if(depth_out_double_data[dist_i*im.cols + dist_j] > dist_depth)
+                        depth_out_double_data[dist_i*im.cols + dist_j] = dist_depth;
+                }
             }
         }
     }
-    remap(im, im_out, srcj, srci, cv::INTER_LINEAR);
 }
 
 void spherical_dibr::image_depth_inverse_mapping(Mat& im, Mat& depth_out_double, Mat& rot_mat_inv, Vec3d t_vec_inv, Mat& im_out)
@@ -267,7 +296,7 @@ void spherical_dibr::image_depth_inverse_mapping(Mat& im, Mat& depth_out_double,
     Vec3w* im_out_data = (Vec3w*)im_out.data;
     double* depth_out_double_data = (double*)depth_out_double.data;
     
-    #pragma omp parallel for
+    #pragma omp parallel for collapse(2)
     for(int i = 0; i < im_height; i++)
     {
         for(int j = 0; j < im_width; j++)
@@ -299,7 +328,7 @@ Mat spherical_dibr::show_double_depth(Mat& depth_double)
     Mat depth(im_height, im_width, CV_16UC1);
     unsigned short* depth_data = (unsigned short*)depth.data;
 
-    #pragma omp parallel for
+    #pragma omp parallel for collapse(2)
     for(int i = 0; i < im_height; i++)
     {
         for(int j = 0; j < im_width; j++)
@@ -323,7 +352,7 @@ Mat spherical_dibr::show_float_depth(Mat& depth_double)
     Mat depth(im_height, im_width, CV_16UC1);
     unsigned short* depth_data = (unsigned short*)depth.data;
 
-    #pragma omp parallel for
+    #pragma omp parallel for collapse(2)
     for(int i = 0; i < im_height; i++)
     {
         for(int j = 0; j < im_width; j++)
@@ -357,85 +386,38 @@ void spherical_dibr::save_log_image(string log_dir, Mat& im_out_forward, Mat& im
 }
 
 void spherical_dibr::render(cv::Mat& im, cv::Mat& depth_double
-            , cv::Mat& rot_mat, cv::Vec3d t_vec)
+            , cv::Mat& rot_mat, cv::Vec3d t_vec, int map_opt, int filt_opt)
 {
     // Do forward mapping
-    Mat im_out;
-    Mat depth_out_double;
-    image_depth_forward_mapping(im, depth_double, rot_mat, t_vec, im_out, depth_out_double);
+    image_depth_forward_mapping(im, depth_double, rot_mat, t_vec, im_out_forward, depth_out_forward, map_opt);
 
     // Convert depth map to cube map
     equi2cube eq;
     eq.set_omp(omp_get_num_procs());
-    Mat depth_cube = eq.get_all(depth_out_double, 600);
+    Mat depth_cube = eq.get_all(depth_out_forward, 600);
 
     // Filtering depth with median/morphological closing
     int element_size = 7;
-    Mat depth_cube_median = median_depth(depth_cube, element_size);
-    Mat depth_cube_closing = closing_depth(depth_cube, element_size);
-    
-    // Convert cubemap type depthmap to Equiractangular depthmap
-    Mat depth_out_double_median = eq.cube2equi(depth_cube_median, depth_double.cols, depth_double.rows);
-    Mat depth_out_double_closing = eq.cube2equi(depth_cube_closing, depth_double.cols, depth_double.rows);
-
-    // Do inverse mapping
-    Mat rot_mat_inv = rot_mat.t();
-    Vec3d t_vec_inv = -t_vec;
-    
-    Mat im_out_inv_median, im_out_inv_closing;
-    image_depth_inverse_mapping(im, depth_out_double_median, rot_mat_inv, t_vec_inv, im_out_inv_median);
-    image_depth_inverse_mapping(im, depth_out_double_closing, rot_mat_inv, t_vec_inv, im_out_inv_closing);
-
-    im_out_forward = im_out;
-    im_out_inverse_median = im_out_inv_median;
-    im_out_inverse_closing = im_out_inv_closing;
-    depth_out_forward = depth_out_double;
-    depth_out_median = depth_out_double_median;
-    depth_out_closing = depth_out_double_closing;
-}
-
-int spherical_dibr::test(int argc, char** argv)
-{
-    if(argc != 9)
+    if(filt_opt == FILTER_MEDIAN)
     {
-        cout << "Usage : Equirectangular_rotate.out <Image file name> <Depth file name> <roll> <pitch> <yaw> <Tx> <Ty> <Tz>" << endl;
-        cout << "<roll>, <pitch>, <yaw> is rotation angle, It should be 0~360" << endl;
-        cout << "<Tx>, <Ty>, <Tz> is translation in meter" << endl;
-        return 0;
+        Mat depth_cube_median = median_depth(depth_cube, element_size);
+        // Convert cubemap type depthmap to Equiractangular depthmap
+        depth_out_median = eq.cube2equi(depth_cube_median, depth_double.cols, depth_double.rows);
+
+        // Do inverse mapping
+        Mat rot_mat_inv = rot_mat.t();
+        Vec3d t_vec_inv = -t_vec;
+        image_depth_inverse_mapping(im, depth_out_median, rot_mat_inv, t_vec_inv, im_out_inverse_median);
     }
-    Mat im = imread(argv[1], IMREAD_ANYCOLOR | IMREAD_ANYDEPTH);
-    Mat depth = imread(argv[2], IMREAD_ANYDEPTH);
-    if(im.data == NULL || depth.data == NULL)
+    else if(filt_opt == FILTER_CLOSING)
     {
-        cout << "Can't open image" << endl;
-        return 0;
+        Mat depth_cube_closing = closing_depth(depth_cube, element_size);
+        // Convert cubemap type depthmap to Equiractangular depthmap
+        depth_out_closing = eq.cube2equi(depth_cube_closing, depth_double.cols, depth_double.rows);
+
+        // Do inverse mapping
+        Mat rot_mat_inv = rot_mat.t();
+        Vec3d t_vec_inv = -t_vec;
+        image_depth_inverse_mapping(im, depth_out_closing, rot_mat_inv, t_vec_inv, im_out_inverse_closing);
     }
-
-    // Position for virtual view point
-    Mat rot_mat = eular2rot(Vec3f(RAD(atof(argv[3])), RAD(atof(argv[4])), RAD(atof(argv[5]))));
-    Vec3d t_vec(atof(argv[6]), atof(argv[7]), atof(argv[8]));
-
-    // Depth image range
-    double min_pixel = 0, max_pixel = 65535;
-    double min_dist = 0, max_dist = 6;
-    Mat depth_double = map_distance(depth, min_pixel, max_pixel, min_dist, max_dist);
-
-    double im_width = im.cols;
-    double im_height = im.rows;
-    cout << "width : " << im_width << ", height : " << im_height << endl;
-
-    // Do Depth Image Based Rendering
-    render(im, depth_double
-            , rot_mat, t_vec);
-
-    // Save log images
-    string log_dir = "log/";
-    save_log_image(log_dir, im_out_forward
-                          , im_out_inverse_median
-                          , im_out_inverse_closing
-                          , depth_out_forward
-                          , depth_out_median
-                          , depth_out_closing);
-
-    return 0;
 }
