@@ -364,27 +364,6 @@ Mat spherical_dibr::show_float_depth(Mat& depth_double)
     return depth;
 }
 
-void spherical_dibr::save_log_image(string log_dir, Mat& im_out_forward, Mat& im_out_inverse_median, Mat& im_out_inverse_closing, Mat& depth_out_forward, Mat& depth_out_median, Mat& depth_out_closing)
-{
-    string im_out_forward_name = log_dir + "im_out_forward.png";
-    string im_out_inverse_median_name = log_dir + "im_out_inverse_median.png";
-    string im_out_inverse_closing_name = log_dir + "im_out_inverse_closing.png";
-    string depth_out_forward_name = log_dir + "depth_out_forward.png";
-    string depth_out_median_name = log_dir + "depth_out_median.png";
-    string depth_out_closing_name = log_dir + "depth_out_closing.png";
-
-    vector<int> param;
-    param.push_back(CV_IMWRITE_PNG_COMPRESSION);
-    param.push_back(0);
-
-    imwrite(im_out_forward_name, im_out_forward, param);
-    imwrite(im_out_inverse_median_name, im_out_inverse_median, param);
-    imwrite(im_out_inverse_closing_name, im_out_inverse_closing, param);
-    imwrite(depth_out_forward_name, depth_out_forward, param);
-    imwrite(depth_out_median_name, depth_out_median, param);
-    imwrite(depth_out_closing_name, depth_out_closing, param);
-}
-
 void spherical_dibr::render(cv::Mat& im, cv::Mat& depth_double
             , cv::Mat& rot_mat, cv::Vec3d t_vec, int map_opt, int filt_opt)
 {

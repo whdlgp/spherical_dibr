@@ -55,5 +55,4 @@ private:
     void image_depth_inverse_mapping(cv::Mat& im, cv::Mat& depth_out_double, cv::Mat& rot_mat_inv, cv::Vec3d t_vec_inv, cv::Mat& im_out);
     cv::Mat show_double_depth(cv::Mat& depth_double);
     cv::Mat show_float_depth(cv::Mat& depth_double);
-    void save_log_image(std::string log_dir, cv::Mat& im_out_forward, cv::Mat& im_out_inverse_median, cv::Mat& im_out_inverse_closing, cv::Mat& depth_out_forward, cv::Mat& depth_out_median, cv::Mat& depth_out_closing);
 };
