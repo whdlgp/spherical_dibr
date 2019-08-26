@@ -109,8 +109,13 @@ int main()
         spherical_dibr spd;
         cout << "image " << i << " now do rendering" << endl;
 
-        Mat r = rot_mat_inv[i]*vt_rot_mat;
-        Vec3d t = vt_tran-cam_tran[i];
+        Mat r = vt_rot_mat*rot_mat_inv[i];
+        Vec3d t_tmp = vt_tran-cam_tran[i];
+        double* rot_mat_data = (double*)rot_mat[i].data;
+        Vec3d t;
+        t[0] = rot_mat_data[0]*t_tmp[0] + rot_mat_data[1]*t_tmp[1] + rot_mat_data[2]*t_tmp[2];
+        t[1] = rot_mat_data[3]*t_tmp[0] + rot_mat_data[4]*t_tmp[1] + rot_mat_data[5]*t_tmp[2];
+        t[2] = rot_mat_data[6]*t_tmp[0] + rot_mat_data[7]*t_tmp[1] + rot_mat_data[8]*t_tmp[2];
         spd.render(im[i], depth_double[i], r, t);
 
         string image_name = "test_result";

@@ -29,9 +29,11 @@ public:
 private:
     cv::Vec3d pixel2rad(const cv::Vec3d& in_vec, int width, int height);
     cv::Vec3d rad2cart(const cv::Vec3d& vec_rad);
+    cv::Vec3d applyTR(const cv::Vec3d& vec_cartesian, const cv::Mat& rot_mat, const cv::Vec3d t_vec);
     cv::Vec3d applyRT(const cv::Vec3d& vec_cartesian, const cv::Mat& rot_mat, const cv::Vec3d t_vec);
     cv::Vec3d cart2rad(const cv::Vec3d& vec_cartesian_rot);
     cv::Vec3d rad2pixel(const cv::Vec3d& vec_rot, int width, int height);
+    cv::Vec3d tr_pixel(const cv::Vec3d& in_vec, const cv::Vec3d& t_vec, const cv::Mat& rot_mat, int width, int height);
     cv::Vec3d rt_pixel(const cv::Vec3d& in_vec, const cv::Vec3d& t_vec, const cv::Mat& rot_mat, int width, int height);
     cv::Mat median_depth(cv::Mat& depth_double, int size);
     cv::Mat closing_depth(cv::Mat& depth_double, int size);

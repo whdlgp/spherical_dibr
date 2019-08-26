@@ -74,7 +74,7 @@ Vec3d spherical_dibr::rad2cart(const Vec3d& vec_rad)
     return vec_cartesian;
 }
 
-Vec3d spherical_dibr::applyRT(const Vec3d& vec_cartesian, const Mat& rot_mat, const Vec3d t_vec)
+Vec3d spherical_dibr::applyTR(const Vec3d& vec_cartesian, const Mat& rot_mat, const Vec3d t_vec)
 {
     double* rot_mat_data = (double*)rot_mat.data;
     Vec3d vec_cartesian_tran;
@@ -88,6 +88,22 @@ Vec3d spherical_dibr::applyRT(const Vec3d& vec_cartesian, const Mat& rot_mat, co
     vec_cartesian_rot[2] = rot_mat_data[6]*vec_cartesian_tran[0] + rot_mat_data[7]*vec_cartesian_tran[1] + rot_mat_data[8]*vec_cartesian_tran[2];
 
     return vec_cartesian_rot;
+}
+
+Vec3d spherical_dibr::applyRT(const Vec3d& vec_cartesian, const Mat& rot_mat, const Vec3d t_vec)
+{
+    double* rot_mat_data = (double*)rot_mat.data;
+    Vec3d vec_cartesian_rot;
+    vec_cartesian_rot[0] = rot_mat_data[0]*vec_cartesian[0] + rot_mat_data[1]*vec_cartesian[1] + rot_mat_data[2]*vec_cartesian[2];
+    vec_cartesian_rot[1] = rot_mat_data[3]*vec_cartesian[0] + rot_mat_data[4]*vec_cartesian[1] + rot_mat_data[5]*vec_cartesian[2];
+    vec_cartesian_rot[2] = rot_mat_data[6]*vec_cartesian[0] + rot_mat_data[7]*vec_cartesian[1] + rot_mat_data[8]*vec_cartesian[2];
+
+    Vec3d vec_cartesian_tran;
+    vec_cartesian_tran[0] = vec_cartesian_rot[0] - t_vec[0];
+    vec_cartesian_tran[1] = vec_cartesian_rot[1] - t_vec[1];
+    vec_cartesian_tran[2] = vec_cartesian_rot[2] - t_vec[2];
+
+    return vec_cartesian_tran;
 }
 
 Vec3d spherical_dibr::cart2rad(const Vec3d& vec_cartesian_rot)
@@ -112,12 +128,24 @@ Vec3d spherical_dibr::rad2pixel(const Vec3d& vec_rot, int width, int height)
     return vec_pixel;
 }
 
-// rotate pixel, in_vec as input(row, col)
+// rotate and translate pixel, in_vec as input(row, col)
 Vec3d spherical_dibr::rt_pixel(const Vec3d& in_vec, const Vec3d& t_vec, const Mat& rot_mat, int width, int height)
 {
     Vec3d vec_rad = pixel2rad(in_vec, width, height);
     Vec3d vec_cartesian = rad2cart(vec_rad);
     Vec3d vec_cartesian_rot = applyRT(vec_cartesian, rot_mat, t_vec);
+    Vec3d vec_rot = cart2rad(vec_cartesian_rot);
+    Vec3d vec_pixel = rad2pixel(vec_rot, width, height);
+
+    return vec_pixel;
+}
+
+// translate and rotate pixel, in_vec as input(row, col)
+Vec3d spherical_dibr::tr_pixel(const Vec3d& in_vec, const Vec3d& t_vec, const Mat& rot_mat, int width, int height)
+{
+    Vec3d vec_rad = pixel2rad(in_vec, width, height);
+    Vec3d vec_cartesian = rad2cart(vec_rad);
+    Vec3d vec_cartesian_rot = applyTR(vec_cartesian, rot_mat, t_vec);
     Vec3d vec_rot = cart2rad(vec_cartesian_rot);
     Vec3d vec_pixel = rad2pixel(vec_rot, width, height);
 
@@ -201,7 +229,7 @@ void spherical_dibr::image_depth_forward_mapping(Mat& im, Mat& depth_double, Mat
         for(int j = 0; j < im_width; j++)
         {
             // forward warping
-            Vec3d vec_pixel = rt_pixel(Vec3d(i, j, depth_data[i*im.cols + j])
+            Vec3d vec_pixel = tr_pixel(Vec3d(i, j, depth_data[i*im.cols + j])
                                        , t_vec
                                        , rot_mat
                                        , im_width, im_height);
