@@ -345,7 +345,8 @@ void spherical_dibr::render(cv::Mat& im, cv::Mat& depth_double
     int element_size = 7;
     Mat depth_cube_median = median_depth(depth_cube, element_size);
     Mat depth_cube_closing = closing_depth(depth_cube, element_size);
-
+    
+    // Convert cubemap type depthmap to Equiractangular depthmap
     Mat depth_out_double_median = eq.cube2equi(depth_cube_median, depth_double.cols, depth_double.rows);
     Mat depth_out_double_closing = eq.cube2equi(depth_cube_closing, depth_double.cols, depth_double.rows);
 
