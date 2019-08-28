@@ -74,6 +74,8 @@ int main()
     vector<string> depth_name = string_parse(reader.Get("camera", "depthname", "UNKNOWN"), ",");
     string vt_rot_str = reader.Get("virtualview", "rotation", "UNKNOWN");
     string vt_tran_str = reader.Get("virtualview", "translation", "UNKNOWN");
+    int filter_option = reader.GetInteger("option", "filteroption", -1);
+    int render_option = reader.GetInteger("option", "renderoption", -1);
 
     vector<Vec3d> cam_rot, cam_tran;
     for(int i = 0; i < cam_num; i++)
@@ -104,6 +106,11 @@ int main()
     }
     Mat vt_rot_mat = sp_dibr.eular2rot(Vec3f(RAD(vt_rot[0]), RAD(vt_rot[1]), RAD(vt_rot[2])));
     
+    vector<Mat> img_forward(cam_num);
+    vector<Mat> depth_map_result(cam_num);
+    vector<Mat> img_result(cam_num);
+    vector<double> cam_dist(cam_num);
+
     for(int i = 0; i < cam_num; i++)
     {
         spherical_dibr spd;
@@ -119,52 +126,105 @@ int main()
         t[2] = rot_mat_data[6]*t_tmp[0] + rot_mat_data[7]*t_tmp[1] + rot_mat_data[8]*t_tmp[2];
 
         // Render virtual view point
-        int map_opt = spd.INVERSE_ONLY;
-        int filt_opt = spd.FILTER_CLOSING;
-        spd.render(im[i], depth_double[i], r, t, map_opt, filt_opt);
+        spd.render(im[i], depth_double[i], r, t, render_option, filter_option);
 
-        // save
+        // Put result of each rendering results to vector buffer
+        if(render_option == spd.FORWARD_INVERSE)
+            img_forward[i] = spd.im_out_forward;
+        if(filter_option == spd.FILTER_MEDIAN)
+        {
+            depth_map_result[i] = spd.depth_out_median;
+            img_result[i] = spd.im_out_inverse_median;
+        }
+        else if(filter_option == spd.FILTER_CLOSING)
+        {
+            depth_map_result[i] = spd.depth_out_closing;
+            img_result[i] = spd.im_out_inverse_closing;
+        }
+        cam_dist[i] = sqrt(t[0]*t[0] + t[1]*t[1] + t[2]*t[2]);
+    }
 
-        if(map_opt == spd.FORWARD_INVERSE)
+    int width = im[0].cols;
+    int height = im[0].rows;
+    Mat blended_img(height, width, CV_16UC3);
+    vector<Vec3w*> im_data(cam_num);
+    vector<double*> depth_data(cam_num);
+    Vec3w* blended_data = (Vec3w*)blended_img.data;
+    for(int i = 0; i < cam_num; i++)
+    {
+        im_data[i] = (Vec3w*)img_result[i].data;
+        depth_data[i] = (double*)depth_map_result[i].data;
+    }
+
+    #pragma omp parallel for collapse(2)
+    for(int i = 0; i < height; i++)
+    {
+        for(int j = 0; j < width; j++)
+        {
+            Vec3d pixel_val = 0;
+            double dist_sum = 0;
+            double threshold = 0.01; // consider below than threshold are occluded area
+            int valid_count = 0;
+            for(int c = 0; c < cam_num; c++)
+            {
+                if(depth_data[c][i*width + j] > threshold)
+                {
+                    valid_count++;
+                    dist_sum += cam_dist[c];
+                }
+            }
+            for(int c = 0; c < cam_num; c++)
+            {
+                if(depth_data[c][i*width + j] > threshold)
+                {
+                    if(valid_count > 1)
+                    {
+                        pixel_val[0] += (1-(cam_dist[c]/dist_sum))*im_data[c][i*width + j][0];
+                        pixel_val[1] += (1-(cam_dist[c]/dist_sum))*im_data[c][i*width + j][1];
+                        pixel_val[2] += (1-(cam_dist[c]/dist_sum))*im_data[c][i*width + j][2];
+                    }
+                    else if(valid_count == 1)
+                    {
+                        pixel_val[0] += im_data[c][i*width + j][0];
+                        pixel_val[1] += im_data[c][i*width + j][1];
+                        pixel_val[2] += im_data[c][i*width + j][2];
+                    }
+                }
+            }
+            blended_data[i*width + j][0] = pixel_val[0];
+            blended_data[i*width + j][1] = pixel_val[1];
+            blended_data[i*width + j][2] = pixel_val[2];
+        }
+    }
+
+    // Save images
+    cout << "Save images" << endl;
+    vector<int> param;
+    param.push_back(IMWRITE_PNG_COMPRESSION);
+    param.push_back(0);
+    for(int i = 0; i < cam_num; i++)
+    {
+        if(render_option == sp_dibr.FORWARD_INVERSE)
         {
             string forward_image_name = "test_result";
             forward_image_name = forward_image_name + to_string(i);
             forward_image_name = forward_image_name + "_forward.png";
-            imwrite(forward_image_name, spd.im_out_forward);
+            cv::imwrite(forward_image_name, img_forward[i], param);
+        }
+        string image_name = "test_result";
+        image_name = image_name + to_string(i);
+        image_name = image_name + "_inverse.png";
+        cv::imwrite(image_name, img_result[i], param);
 
-            string image_name = "test_result";
-            image_name = image_name + to_string(i);
-            image_name = image_name + "_inverse.png";
-            imwrite(image_name, spd.im_out_inverse_closing);
-        }
-        
-        if(map_opt == spd.INVERSE_ONLY)
-        {
-            string image_name = "test_result";
-            image_name = image_name + to_string(i);
-            image_name = image_name + "_inverse.png";
-            imwrite(image_name, spd.im_out_inverse_closing);
-        }
-
-        if(filt_opt == spd.FILTER_MEDIAN)
-        {
-            double min_pixel = 0, max_pixel = 65535;
-            double min_dist = depth_min, max_dist = depth_max;
-            string depth_median_name = "test_depth_median";
-            depth_median_name = depth_median_name + to_string(i);
-            depth_median_name = depth_median_name + ".png";
-            imwrite(depth_median_name, spd.remap_distance(spd.depth_out_median, min_dist, max_dist, min_pixel, max_pixel));
-        }
-        if(filt_opt == spd.FILTER_CLOSING)
-        {
-            double min_pixel = 0, max_pixel = 65535;
-            double min_dist = depth_min, max_dist = depth_max;
-            string depth_closing_name = "test_depth_closing";
-            depth_closing_name = depth_closing_name + to_string(i);
-            depth_closing_name = depth_closing_name + ".png";
-            imwrite(depth_closing_name, spd.remap_distance(spd.depth_out_closing, min_dist, max_dist, min_pixel, max_pixel));
-        }
+        double min_pixel = 0, max_pixel = 65535;
+        double min_dist = depth_min, max_dist = depth_max;
+        string depth_closing_name = "test_depth";
+        depth_closing_name = depth_closing_name + to_string(i);
+        depth_closing_name = depth_closing_name + ".png";
+        cv::imwrite(depth_closing_name, sp_dibr.remap_distance(depth_map_result[i], min_dist, max_dist, min_pixel, max_pixel), param);
     }
+    string blended_name = "blend.png";
+    cv::imwrite(blended_name, blended_img, param);
 
     return 0;
 }
