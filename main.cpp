@@ -1,13 +1,5 @@
 #include "spherical_dibr.hpp"
-/*
-int main(int argc, char** argv)
-{
-    spherical_dibr sp_dibr;
-    sp_dibr.test(argc, argv);
-    return 0;
-}*/
-
-// Example that shows simple usage of the INIReader class
+#include "debug_print.h"
 
 #include <iostream>
 #include <sstream>
@@ -116,6 +108,7 @@ int main()
 
     for(int i = 0; i < cam_num; i++)
     {
+        START_TIME(render_one_image);
         spherical_dibr spd;
         cout << "image " << i << " now do rendering" << endl;
 
@@ -130,6 +123,7 @@ int main()
 
         // Render virtual view point
         spd.render(im[i], depth_double[i], r, t, render_option, filter_option);
+        STOP_TIME(render_one_image);
 
         // Put result of each rendering results to vector buffer
         if(render_option == spd.FORWARD_INVERSE)
@@ -165,6 +159,7 @@ int main()
         depth_data[i] = (double*)depth_map_result[i].data;
     }
 
+    START_TIME(Blend_image);
     #pragma omp parallel for collapse(2)
     for(int i = 0; i < height; i++)
     {
@@ -179,7 +174,7 @@ int main()
                 if(depth_data[c][i*width + j] > threshold)
                 {
                     valid_count++;
-                    dist_sum += cam_dist[c];
+                    dist_sum += 1/cam_dist[c];
                 }
             }
             for(int c = 0; c < cam_num; c++)
@@ -188,9 +183,9 @@ int main()
                 {
                     if(valid_count > 1)
                     {
-                        pixel_val[0] += (1-(cam_dist[c]/dist_sum))*im_data[c][i*width + j][0];
-                        pixel_val[1] += (1-(cam_dist[c]/dist_sum))*im_data[c][i*width + j][1];
-                        pixel_val[2] += (1-(cam_dist[c]/dist_sum))*im_data[c][i*width + j][2];
+                        pixel_val[0] += (1/cam_dist[c]/dist_sum)*im_data[c][i*width + j][0];
+                        pixel_val[1] += (1/cam_dist[c]/dist_sum)*im_data[c][i*width + j][1];
+                        pixel_val[2] += (1/cam_dist[c]/dist_sum)*im_data[c][i*width + j][2];
                     }
                     else if(valid_count == 1)
                     {
@@ -205,6 +200,7 @@ int main()
             blended_data[i*width + j][2] = pixel_val[2];
         }
     }
+    STOP_TIME(Blend_image);
 
     // Save images
     cout << "Save images" << endl;
