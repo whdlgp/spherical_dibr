@@ -39,6 +39,9 @@ public:
     cv::Mat depth_out_forward;
     cv::Mat depth_out_median;
     cv::Mat depth_out_closing;
+    cv::Mat depth_cube;
+    cv::Mat depth_cube_median;
+    cv::Mat depth_cube_closing;
 
 private:
     cv::Vec3d pixel2rad(const cv::Vec3d& in_vec, int width, int height);

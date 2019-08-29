@@ -373,13 +373,13 @@ void spherical_dibr::render(cv::Mat& im, cv::Mat& depth_double
     // Convert depth map to cube map
     equi2cube eq;
     eq.set_omp(omp_get_num_procs());
-    Mat depth_cube = eq.get_all(depth_out_forward, 600);
+    depth_cube = eq.get_all(depth_out_forward, 600);
 
     // Filtering depth with median/morphological closing
     int element_size = 7;
     if(filt_opt == FILTER_MEDIAN)
     {
-        Mat depth_cube_median = median_depth(depth_cube, element_size);
+        depth_cube_median = median_depth(depth_cube, element_size);
         // Convert cubemap type depthmap to Equiractangular depthmap
         depth_out_median = eq.cube2equi(depth_cube_median, depth_double.cols, depth_double.rows);
 
@@ -390,7 +390,7 @@ void spherical_dibr::render(cv::Mat& im, cv::Mat& depth_double
     }
     else if(filt_opt == FILTER_CLOSING)
     {
-        Mat depth_cube_closing = closing_depth(depth_cube, element_size);
+        depth_cube_closing = closing_depth(depth_cube, element_size);
         // Convert cubemap type depthmap to Equiractangular depthmap
         depth_out_closing = eq.cube2equi(depth_cube_closing, depth_double.cols, depth_double.rows);
 

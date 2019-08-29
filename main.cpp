@@ -107,6 +107,9 @@ int main()
     Mat vt_rot_mat = sp_dibr.eular2rot(Vec3f(RAD(vt_rot[0]), RAD(vt_rot[1]), RAD(vt_rot[2])));
     
     vector<Mat> img_forward(cam_num);
+    vector<Mat> depth_forward(cam_num);
+    vector<Mat> depth_cube(cam_num);
+    vector<Mat> depth_cube_filter(cam_num);
     vector<Mat> depth_map_result(cam_num);
     vector<Mat> img_result(cam_num);
     vector<double> cam_dist(cam_num);
@@ -130,14 +133,20 @@ int main()
 
         // Put result of each rendering results to vector buffer
         if(render_option == spd.FORWARD_INVERSE)
+        {
             img_forward[i] = spd.im_out_forward;
+            depth_forward[i] = spd.depth_out_forward;
+        }
+        depth_cube[i] = spd.depth_cube;
         if(filter_option == spd.FILTER_MEDIAN)
         {
+            depth_cube_filter[i] = spd.depth_cube_median;
             depth_map_result[i] = spd.depth_out_median;
             img_result[i] = spd.im_out_inverse_median;
         }
         else if(filter_option == spd.FILTER_CLOSING)
         {
+            depth_cube_filter[i] = spd.depth_cube_closing;
             depth_map_result[i] = spd.depth_out_closing;
             img_result[i] = spd.im_out_inverse_closing;
         }
@@ -210,7 +219,15 @@ int main()
             forward_image_name = forward_image_name + to_string(i);
             forward_image_name = forward_image_name + "_forward.png";
             cv::imwrite(forward_image_name, img_forward[i], param);
+
+            double min_pixel = 0, max_pixel = 65535;
+            double min_dist = depth_min, max_dist = depth_max;
+            string depth_forward_name = "test_depth";
+            depth_forward_name = depth_forward_name + to_string(i);
+            depth_forward_name = depth_forward_name + "_forward.png";
+            cv::imwrite(depth_forward_name, sp_dibr.remap_distance(depth_forward[i], min_dist, max_dist, min_pixel, max_pixel), param);
         }
+
         string image_name = "test_result";
         image_name = image_name + to_string(i);
         image_name = image_name + "_inverse.png";
@@ -222,6 +239,16 @@ int main()
         depth_closing_name = depth_closing_name + to_string(i);
         depth_closing_name = depth_closing_name + ".png";
         cv::imwrite(depth_closing_name, sp_dibr.remap_distance(depth_map_result[i], min_dist, max_dist, min_pixel, max_pixel), param);
+
+        string test_depth_cube_name = "test_depth_cube";
+        test_depth_cube_name = test_depth_cube_name + to_string(i);
+        test_depth_cube_name = test_depth_cube_name + "_forward.png";
+        cv::imwrite(test_depth_cube_name, sp_dibr.remap_distance(depth_cube[i], min_dist, max_dist, min_pixel, max_pixel), param);
+
+        string test_depth_cube_filter_name = "test_depth_cube";
+        test_depth_cube_filter_name = test_depth_cube_filter_name + to_string(i);
+        test_depth_cube_filter_name = test_depth_cube_filter_name + "_filter.png";
+        cv::imwrite(test_depth_cube_filter_name, sp_dibr.remap_distance(depth_cube_filter[i], min_dist, max_dist, min_pixel, max_pixel), param);
     }
     string blended_name = "blend.png";
     cv::imwrite(blended_name, blended_img, param);
