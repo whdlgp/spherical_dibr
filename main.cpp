@@ -122,7 +122,7 @@ int main()
         t[2] = rot_mat_data[6]*t_tmp[0] + rot_mat_data[7]*t_tmp[1] + rot_mat_data[8]*t_tmp[2];
 
         // Render virtual view point
-        spd.render(im[i], depth_double[i], r, t, render_option, filter_option);
+        spd.render(im[i], depth_double[i], depth_min, depth_max, r, t, render_option, filter_option);
         STOP_TIME(render_one_image);
 
         // Put result of each rendering results to vector buffer

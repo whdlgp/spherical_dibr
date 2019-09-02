@@ -30,7 +30,7 @@ public:
     cv::Mat remap_distance(cv::Mat& depth, double min_dist, double max_dist, double min_pixel, double max_pixel);
     cv::Vec3d rot2eular(cv::Mat rot_mat);
     cv::Mat eular2rot(cv::Vec3d theta);
-    void render(cv::Mat& im, cv::Mat& depth_double
+    void render(cv::Mat& im, cv::Mat& depth_double, double min_dist, double max_dist
             , cv::Mat& rot_mat, cv::Vec3d t_vec, int map_opt, int filt_opt);
 
     cv::Mat im_out_forward;
@@ -56,6 +56,8 @@ private:
     cv::Mat closing_depth(cv::Mat& depth_double, int size);
     void image_depth_forward_mapping(cv::Mat& im, cv::Mat& depth_double, cv::Mat& rot_mat, cv::Vec3d t_vec, cv::Mat& im_out, cv::Mat& depth_out_double, int map_opt);
     void image_depth_inverse_mapping(cv::Mat& im, cv::Mat& depth_out_double, cv::Mat& rot_mat_inv, cv::Vec3d t_vec_inv, cv::Mat& im_out);
+    cv::Mat invert_depth(cv::Mat& depth_double, double min_dist, double max_dist);
+    cv::Mat revert_depth(cv::Mat& depth_inverted, double min_dist, double max_dist);
     cv::Mat show_double_depth(cv::Mat& depth_double);
     cv::Mat show_float_depth(cv::Mat& depth_double);
 };

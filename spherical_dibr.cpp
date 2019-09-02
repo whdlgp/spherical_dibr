@@ -316,6 +316,45 @@ void spherical_dibr::image_depth_inverse_mapping(Mat& im, Mat& depth_out_double,
     remap(im, im_out, srcj, srci, cv::INTER_LINEAR);
 }
 
+Mat spherical_dibr::invert_depth(Mat& depth_double, double min_dist, double max_dist)
+{
+    Mat depth_inverted(depth_double.rows, depth_double.cols, depth_double.type());
+    double* depth_double_data = (double*)depth_double.data;
+    double* depth_inverted_data = (double*)depth_inverted.data;
+    #pragma omp parallel for collapse(2)
+    for(int i = 0; i < depth_double.rows; i++)
+    {
+        for(int j = 0; j < depth_double.cols; j++)
+        {
+            if(depth_double_data[i*depth_double.cols + j] > 1e-6)
+                depth_inverted_data[i*depth_double.cols + j] = max_dist - depth_double_data[i*depth_double.cols + j];
+            else
+                depth_inverted_data[i*depth_double.cols + j] = 0;
+        }
+    }
+
+    return depth_inverted;
+}
+
+Mat spherical_dibr::revert_depth(Mat& depth_inverted, double min_dist, double max_dist)
+{
+    Mat depth_reverted(depth_inverted.rows, depth_inverted.cols, depth_inverted.type());
+    double* depth_inverted_data = (double*)depth_inverted.data;
+    double* depth_reverted_data = (double*)depth_reverted.data;
+    #pragma omp parallel for collapse(2)
+    for(int i = 0; i < depth_inverted.rows; i++)
+    {
+        for(int j = 0; j < depth_inverted.cols; j++)
+        {
+            if(depth_inverted_data[i*depth_inverted.cols + j] > 1e-6)
+                depth_reverted_data[i*depth_inverted.cols + j] = max_dist - depth_inverted_data[i*depth_inverted.cols + j];
+            else
+                depth_reverted_data[i*depth_inverted.cols + j] = 0;
+        }
+    }
+    return depth_reverted;
+}
+
 Mat spherical_dibr::show_double_depth(Mat& depth_double)
 {
     double min_pixel = 0, max_pixel = 65535;
@@ -364,16 +403,17 @@ Mat spherical_dibr::show_float_depth(Mat& depth_double)
     return depth;
 }
 
-void spherical_dibr::render(cv::Mat& im, cv::Mat& depth_double
+void spherical_dibr::render(cv::Mat& im, cv::Mat& depth_double, double min_dist, double max_dist
             , cv::Mat& rot_mat, cv::Vec3d t_vec, int map_opt, int filt_opt)
 {
     // Do forward mapping
     image_depth_forward_mapping(im, depth_double, rot_mat, t_vec, im_out_forward, depth_out_forward, map_opt);
+    Mat depth_out_forward_inverted = invert_depth(depth_out_forward, min_dist, max_dist);
 
     // Convert depth map to cube map
     equi2cube eq;
     eq.set_omp(omp_get_num_procs());
-    depth_cube = eq.get_all(depth_out_forward, 600);
+    depth_cube = eq.get_all(depth_out_forward_inverted, 600);
 
     // Filtering depth with median/morphological closing
     int element_size = 7;
@@ -382,6 +422,7 @@ void spherical_dibr::render(cv::Mat& im, cv::Mat& depth_double
         depth_cube_median = median_depth(depth_cube, element_size);
         // Convert cubemap type depthmap to Equiractangular depthmap
         depth_out_median = eq.cube2equi(depth_cube_median, depth_double.cols, depth_double.rows);
+        depth_out_median = invert_depth(depth_out_median, min_dist, max_dist);
 
         // Do inverse mapping
         Mat rot_mat_inv = rot_mat.t();
@@ -393,6 +434,7 @@ void spherical_dibr::render(cv::Mat& im, cv::Mat& depth_double
         depth_cube_closing = closing_depth(depth_cube, element_size);
         // Convert cubemap type depthmap to Equiractangular depthmap
         depth_out_closing = eq.cube2equi(depth_cube_closing, depth_double.cols, depth_double.rows);
+        depth_out_closing = invert_depth(depth_out_closing, min_dist, max_dist);
 
         // Do inverse mapping
         Mat rot_mat_inv = rot_mat.t();
