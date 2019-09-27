@@ -47,37 +47,43 @@ int main()
         return 1;
     }
 
-    int num_of_camera = reader.GetInteger("camera", "number", -1);
+    int num_of_camera = reader.GetInteger("option", "number", -1);
     std::cout << "Config loaded from 'camera_info.ini'\n"
-              << "number of camera : " <<  reader.GetInteger("camera", "number", -1) << "\n"
-              << "rotation vector\n" << reader.Get("camera", "rotation", "UNKNOWN") << "\n"
-              << "translation vector\n" << reader.Get("camera", "translation", "UNKNOWN") << "\n"
-              << "image name\n" << reader.Get("camera", "imagename", "UNKNOWN") << "\n"
-              << "depth name\n" << reader.Get("camera", "depthname", "UNKNOWN") << "\n"
-              << "virtual view rotation\n" << reader.Get("virtualview", "rotation", "UNKNOWN") << "\n"
-              << "virtual view translation\n" << reader.Get("virtualview", "translation", "UNKNOWN") << "\n";
-
-    int cam_num = reader.GetInteger("camera", "number", -1);
-    double depth_min = reader.GetReal("camera", "depthmin", -1);
-    double depth_max = reader.GetReal("camera", "depthmax", -1);
-    vector<string> cam_rot_str = string_parse(reader.Get("camera", "rotation", "UNKNOWN"), ",");
-    vector<string> cam_tran_str = string_parse(reader.Get("camera", "translation", "UNKNOWN"), ",");
-    vector<string> cam_name = string_parse(reader.Get("camera", "imagename", "UNKNOWN"), ",");
-    vector<string> depth_name = string_parse(reader.Get("camera", "depthname", "UNKNOWN"), ",");
-    string vt_rot_str = reader.Get("virtualview", "rotation", "UNKNOWN");
-    string vt_tran_str = reader.Get("virtualview", "translation", "UNKNOWN");
+              << "number of camera : " <<  num_of_camera << "\n" << endl;
     int filter_option = reader.GetInteger("option", "filteroption", -1);
     int render_option = reader.GetInteger("option", "renderoption", -1);
+    string output_dir = reader.Get("option", "output", "UNKNOWN") + "/";
 
+    // Read Camera information
+    int cam_num = num_of_camera;
+    vector<int> camera_type;
+    vector<string> cam_name;
+    vector<string> depth_name;
+    vector<double> depth_min;
+    vector<double> depth_max;
     vector<Vec3d> cam_rot, cam_tran;
     for(int i = 0; i < cam_num; i++)
     {
-        cam_rot.push_back(string_to_vec(cam_rot_str[i]));
-        cam_tran.push_back(string_to_vec(cam_tran_str[i]));
+        string cams = "camera";
+        cams = cams + to_string(1+i);
+        cout << "Read camera: " << cams << endl;
+
+        camera_type.push_back(reader.GetInteger(cams, "type", -1));
+        cam_name.push_back(reader.Get(cams, "imagename", "UNKNOWN"));
+        depth_name.push_back(reader.Get(cams, "depthname", "UNKNOWN"));
+        depth_min.push_back(reader.GetReal(cams, "depthmin", -1));
+        depth_max.push_back(reader.GetReal(cams, "depthmax", -1));
+        cam_rot.push_back(string_to_vec(reader.Get(cams, "rotation", "UNKNOWN")));
+        cam_tran.push_back(string_to_vec(reader.Get(cams, "translation", "UNKNOWN")));
     }
+
+    // Read Virtual View Point information
     Vec3d vt_rot, vt_tran;
-    vt_rot = string_to_vec(vt_rot_str);
-    vt_tran = string_to_vec(vt_tran_str);
+    double vt_depth_min, vt_depth_max;
+    vt_rot = string_to_vec(reader.Get("virtualview", "rotation", "UNKNOWN"));
+    vt_tran = string_to_vec(reader.Get("virtualview", "translation", "UNKNOWN"));
+    vt_depth_min = reader.GetReal("virtualview", "depthmin", -1);
+    vt_depth_max = reader.GetReal("virtualview", "depthmax", -1);
 
     spherical_dibr sp_dibr;
     vector<Mat> im(cam_num);
@@ -93,7 +99,7 @@ int main()
         rot_mat_inv[i] = rot_mat[i].t();
 
         double min_pixel = 0, max_pixel = 65535;
-        double min_dist = depth_min, max_dist = depth_max;
+        double min_dist = depth_min[i], max_dist = depth_max[i];
         depth_double[i] = sp_dibr.map_distance(depth[i], min_pixel, max_pixel, min_dist, max_dist);
     }
     Mat vt_rot_mat = sp_dibr.eular2rot(Vec3f(RAD(vt_rot[0]), RAD(vt_rot[1]), RAD(vt_rot[2])));
@@ -106,6 +112,7 @@ int main()
     vector<Mat> img_result(cam_num);
     vector<double> cam_dist(cam_num);
 
+    // Start rendering
     for(int i = 0; i < cam_num; i++)
     {
         START_TIME(render_one_image);
@@ -122,7 +129,7 @@ int main()
         t[2] = rot_mat_data[6]*t_tmp[0] + rot_mat_data[7]*t_tmp[1] + rot_mat_data[8]*t_tmp[2];
 
         // Render virtual view point
-        spd.render(im[i], depth_double[i], depth_min, depth_max, r, t, render_option, filter_option);
+        spd.render(im[i], depth_double[i], depth_min[i], depth_max[i], r, t, render_option, filter_option);
         STOP_TIME(render_one_image);
 
         // Put result of each rendering results to vector buffer
@@ -211,42 +218,42 @@ int main()
     {
         if(render_option == sp_dibr.FORWARD_INVERSE)
         {
-            string forward_image_name = "test_result";
+            string forward_image_name = output_dir + "test_result";
             forward_image_name = forward_image_name + to_string(i);
             forward_image_name = forward_image_name + "_forward.png";
             cv::imwrite(forward_image_name, img_forward[i], param);
 
             double min_pixel = 0, max_pixel = 65535;
-            double min_dist = depth_min, max_dist = depth_max;
-            string depth_forward_name = "test_depth";
+            double min_dist = depth_min[i], max_dist = depth_max[i];
+            string depth_forward_name = output_dir + "test_depth";
             depth_forward_name = depth_forward_name + to_string(i);
             depth_forward_name = depth_forward_name + "_forward.png";
             cv::imwrite(depth_forward_name, sp_dibr.remap_distance(depth_forward[i], min_dist, max_dist, min_pixel, max_pixel), param);
         }
 
-        string image_name = "test_result";
+        string image_name = output_dir + "test_result";
         image_name = image_name + to_string(i);
         image_name = image_name + "_inverse.png";
         cv::imwrite(image_name, img_result[i], param);
 
         double min_pixel = 0, max_pixel = 65535;
-        double min_dist = depth_min, max_dist = depth_max;
-        string depth_closing_name = "test_depth";
+        double min_dist = depth_min[i], max_dist = depth_max[i];
+        string depth_closing_name = output_dir + "test_depth";
         depth_closing_name = depth_closing_name + to_string(i);
         depth_closing_name = depth_closing_name + ".png";
         cv::imwrite(depth_closing_name, sp_dibr.remap_distance(depth_map_result[i], min_dist, max_dist, min_pixel, max_pixel), param);
 
-        string test_depth_cube_name = "test_depth_cube";
+        string test_depth_cube_name = output_dir + "test_depth_cube";
         test_depth_cube_name = test_depth_cube_name + to_string(i);
         test_depth_cube_name = test_depth_cube_name + "_forward.png";
         cv::imwrite(test_depth_cube_name, sp_dibr.remap_distance(depth_cube[i], min_dist, max_dist, min_pixel, max_pixel), param);
 
-        string test_depth_cube_filter_name = "test_depth_cube";
+        string test_depth_cube_filter_name = output_dir + "test_depth_cube";
         test_depth_cube_filter_name = test_depth_cube_filter_name + to_string(i);
         test_depth_cube_filter_name = test_depth_cube_filter_name + "_filter.png";
         cv::imwrite(test_depth_cube_filter_name, sp_dibr.remap_distance(depth_cube_filter[i], min_dist, max_dist, min_pixel, max_pixel), param);
     }
-    string blended_name = "blend.png";
+    string blended_name = output_dir + "blend.png";
     cv::imwrite(blended_name, blended_img, param);
 
     return 0;

@@ -24,6 +24,12 @@ public:
         // 2. Do filtering to depthmap with morphological closing filter
         FILTER_MEDIAN = 0,
         FILTER_CLOSING,
+
+        // Select
+        // 0. Plane
+        // 1. Equirectangular
+        CAMERA_TYPE_PLANE = 0,
+        CAMERA_TYPE_ERP,
     };
 
     cv::Mat map_distance(cv::Mat& depth, double min_pixel, double max_pixel, double min_dist, double max_dist);
