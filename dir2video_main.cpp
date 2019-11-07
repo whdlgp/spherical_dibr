@@ -192,17 +192,19 @@ int main(int argc, char *argv[])
     vt_cam_info.cam_name = reader.Get("virtualview", "outputname", "UNKNOWN");
     vt_cam_info.fps = reader.GetInteger("virtualview", "fps", -1);
 
-    vector<VideoCapture> rgb_capture(cam_num);
-    vector<VideoCapture> depth_capture(cam_num);
+    vector<vector<String>> rgb_names(cam_num);
+    vector<vector<String>> depth_names(cam_num);
     for(int i = 0; i < cam_num; i++)
     {
-        rgb_capture[i] = VideoCapture(cam_info[i].cam_name);
-        depth_capture[i] = VideoCapture(cam_info[i].depth_name);
+        glob(cam_info[i].cam_name, rgb_names[i]);
+        glob(cam_info[i].depth_name, depth_names[i]);
     }
+    int num_of_frames = rgb_names[0].size();
 
+    // Start blending and writing
     VideoWriter vt_writer;
-    bool is_empty = false;
-    while(1)
+    bool is_first = true;
+    for(int fn = 0; fn < num_of_frames; fn++)
     {
         vector<Mat> im(cam_num);
         vector<Mat> depth_double(cam_num);
@@ -213,14 +215,8 @@ int main(int argc, char *argv[])
             //16bit RGB image
             //double 1channel depth image
             Mat im_8bit, depth_8bit;
-            rgb_capture[i] >> im_8bit;
-            depth_capture[i] >> depth_8bit;
-
-            if(im_8bit.empty() || depth_8bit.empty())
-            {
-                is_empty = true;
-                break;
-            }
+            im_8bit = imread(rgb_names[i][fn]);
+            depth_8bit = imread(depth_names[i][fn]);
 
             im_8bit.convertTo(im_8bit, CV_16UC3);
             im[i] = im_8bit*256;
@@ -231,14 +227,11 @@ int main(int argc, char *argv[])
             depth_8bit_chan[0].convertTo(depth, CV_64FC1);
             depth_double[i] = depth * (cam_info[i].depth_max-cam_info[i].depth_min)/255.0 + cam_info[i].depth_min;
         }
-        if(is_empty)
-            break;
 
         //do dibr, blending
         Mat blended_img = dibr(im, depth_double, cam_info, vt_cam_info, cam_num, filter_option, render_option);
 
         //write video
-        bool is_first = true;
         if(is_first)
         {
             is_first = false;
