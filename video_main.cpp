@@ -207,7 +207,8 @@ int main(int argc, char *argv[])
     vt_cam_info.tran = string_to_vec(reader.Get("virtualview", "translation", "UNKNOWN"));
     vt_cam_info.depth_min = reader.GetReal("virtualview", "depthmin", -1);
     vt_cam_info.depth_max = reader.GetReal("virtualview", "depthmax", -1);
-
+    vt_cam_info.cam_name = reader.Get("virtualview", "outputname", "UNKNOWN");
+    vt_cam_info.fps = reader.GetInteger("virtualview", "fps", -1);
 
     vector<VideoCapture> rgb_capture(cam_num);
     vector<VideoCapture> depth_capture(cam_num);
@@ -217,6 +218,8 @@ int main(int argc, char *argv[])
         depth_capture[i] = VideoCapture(cam_info[i].depth_name);
     }
 
+    VideoWriter vt_writer;
+    bool is_empty = false;
     while(1)
     {
         vector<Mat> im(cam_num);
@@ -230,20 +233,15 @@ int main(int argc, char *argv[])
             Mat im_8bit, depth_8bit;
             rgb_capture[i] >> im_8bit;
             depth_capture[i] >> depth_8bit;
-            Mat depth_8bit2 = imread("cam"+to_string(i)+"_depth0001.jpg");
-            double min1, max1, min2, max2;
-            minMaxLoc(depth_8bit, &min1, &max1);
-            minMaxLoc(depth_8bit2, &min2, &max2);
-            cout << "from avi: " << min1 << ',' << max1 << endl;
-            cout << "from jpg: " << min2 << ',' << max2 << endl;
-
 
             if(im_8bit.empty() || depth_8bit.empty())
+            {
+                is_empty = true;
                 break;
+            }
 
             im_8bit.convertTo(im_8bit, CV_16UC3);
             im[i] = im_8bit*256;
-
             
             Mat depth_8bit_chan[3];
             Mat depth;
@@ -251,40 +249,30 @@ int main(int argc, char *argv[])
             depth_8bit_chan[0].convertTo(depth, CV_64FC1);
             depth_double[i] = depth * (cam_info[i].depth_max-cam_info[i].depth_min)/255.0 + cam_info[i].depth_min;
         }
+        if(is_empty)
+            break;
 
         //do dibr, blending
-        Mat blended_img = dibr(im, depth_double, cam_info, vt_cam_info, cam_num, filter_option, render_option);     
-        Mat tmp;
-        resize(blended_img, tmp, Size(), 0.25, 0.25);
-        imshow("test", tmp);
-        waitKey(0);
+        Mat blended_img = dibr(im, depth_double, cam_info, vt_cam_info, cam_num, filter_option, render_option);
+
+        //write video
+        bool is_first = true;
+        if(is_first)
+        {
+            is_first = false;
+            vt_writer.open(vt_cam_info.cam_name, VideoWriter::fourcc('M', 'J', 'P', 'G'), vt_cam_info.fps
+                            , Size(blended_img.cols, blended_img.rows), true);
+            if(!vt_writer.isOpened())
+            {
+                cout << "error while initialize videowriter" << endl;
+                return 1;
+            }
+        }
+
+        Mat save_frame = blended_img/256;
+        save_frame.convertTo(save_frame, CV_8UC3);
+        vt_writer.write(save_frame);
     }
-    
-    /*
-    vector<Mat> im(cam_num);
-    vector<Mat> depth(cam_num);
-    vector<Mat> depth_double(cam_num);
-    spherical_dibr sp_dibr;
-    for(int i = 0; i < cam_num; i++)
-    {
-        im[i] = imread(cam_info[i].cam_name, IMREAD_ANYCOLOR | IMREAD_ANYDEPTH);
-        depth[i] = imread(cam_info[i].depth_name, IMREAD_ANYDEPTH);
-
-        double min_pixel = 0, max_pixel = 65535;
-        double min_dist = cam_info[i].depth_min, max_dist = cam_info[i].depth_max;
-        depth_double[i] = sp_dibr.map_distance(depth[i], min_pixel, max_pixel, min_dist, max_dist);
-    }
-
-    Mat blended_img = dibr(im, depth_double, cam_info, vt_cam_info, cam_num, filter_option, render_option);
-
-    // Save images
-    cout << "Save images" << endl;
-    vector<int> param;
-    param.push_back(IMWRITE_PNG_COMPRESSION);
-    param.push_back(0);
-    string blended_name = output_dir + "blend.png";
-    cv::imwrite(blended_name, blended_img, param);
-    */
 
     return 0;
 }

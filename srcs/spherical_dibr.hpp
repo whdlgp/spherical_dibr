@@ -21,6 +21,7 @@ class camera_info
     double depth_max;
     int width;
     int height;
+    int fps;
     private:
 };
 
